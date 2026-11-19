@@ -1,0 +1,15 @@
+name: CPU and host contracts (NOT GPU validation)
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror softmax_cpu.cpp -o cpu_test
+      - run: ./cpu_test test && ./cpu_test study && ./cpu_test demo
+      - run: g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror test_bench.cpp -o test_bench
+      - run: ./test_bench
+      - run: g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer test_bench.cpp -o test_bench_san
+      - run: ASAN_OPTIONS=detect_leaks=0 ./test_bench_san

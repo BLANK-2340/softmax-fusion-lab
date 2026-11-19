@@ -262,6 +262,7 @@ void tests() {
 }
 } // namespace fusion
 
+#ifndef FUSION_NO_MAIN
 int main(int argc, char** argv) {
     try {
         const std::string command=argc==2 ? argv[1] : "";
@@ -284,3 +285,4 @@ int main(int argc, char** argv) {
         } else throw std::invalid_argument("usage: softmax_cpu {test|study|demo}");
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
+#endif
