@@ -13,3 +13,7 @@ jobs:
       - run: ./test_bench
       - run: g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer test_bench.cpp -o test_bench_san
       - run: ASAN_OPTIONS=detect_leaks=0 ./test_bench_san
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -W error -m unittest -v test_report

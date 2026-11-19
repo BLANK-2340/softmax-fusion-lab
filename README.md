@@ -76,6 +76,20 @@ Metadata includes device name/SM/global memory, driver/runtime version, NVCC/hos
 
 ## Tests, limitations and next gate
 
+### Source-bound report capture (Python 3.12, standard library)
+
+On actual compatible hardware, after building and reviewing the GPU executable:
+
+```bash
+python benchmark_report.py capture ./gpu_bench local-run.json --build-command 'nvcc -std=c++17 -O2 softmax_cuda.cu -o gpu_bench' --shape 128 257 10 50
+python benchmark_report.py validate local-run.json
+python -W error -m unittest -v test_report
+```
+
+Capture executes the selected binary directly, without a shell, with a 180-second timeout. It records source hashes for the kernel/CPU reference/shared harness, the executable digest, caller-recorded build command and complete stdout/stderr. It requires unchanged sources/binary during execution, exit code zero, empty stderr, exact timing scope, metadata, paired variant shapes/counts, positive ordered timing summaries, bounded numerical errors and the final success marker. Files are created exclusively, never overwritten; failed capture creates no report. Reports require at least two rows, one warmup and two repetitions, so sanitizer-only/zero-warmup runs are not accepted as useful benchmark records. Capture does not execute the supplied build-command string.
+
+Validation reparses the raw log and checks the saved fields/digest against local source hashes. This is **internal consistency, not hardware attestation**, proof that the binary was built from those sources, or independent verification of device correctness. A forged process log can still be internally consistent. Preserve independent compiler/device-sanitizer evidence before making GPU claims. No actual GPU report is shipped here. All parser fixtures and mocked subprocess tests in `test_report.py` are explicitly **SYNTHETIC UNIT TESTS**, not measurements; they produce temporary files only.
+
 Seven CPU test groups exercise analytic probabilities, extreme/non-dyadic values, mask conventions, invariances, invalid inputs, empty batches, immutability and the full numerical study. Host-harness tests exercise independently known timing statistics, bounded parsing, deterministic workloads, correctness failure injection and nine boundary widths. These tests do **not** execute kernel synchronization, device reductions or CUDA API paths.
 
 ```bash
