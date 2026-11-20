@@ -33,11 +33,28 @@ CPU prefix-softmax:
 0 0 0 0
 ```
 
-The CPU candidate uses the established serial online max/normalizer recurrence and recomputes logits in a second pass. Its independent reference materializes long-double logits and exponentials with a conventional max-shifted sum. Neither is a CUDA simulator.
+The CPU candidate uses the established serial online max/normalizer recurrence and recomputes logits in a second pass. It uses float logits/output but double exponential/normalizer arithmetic after the November 20 precision fix below. Its independent reference materializes long-double logits and exponentials with a conventional max-shifted sum. Neither is a CUDA simulator.
 
 The fixed CPU study covers 21 widths × three original xorshift32 seeds × four input modes, five prefix lengths per matrix: 252 matrices / 1260 rows. Widths include 31/32/33, 255/256/257, 1023/1024/1025 and 4095/4096. Fully masked/singleton and repeated narrow-width lengths are intentional. Diagnostic cases are not a representative workload distribution.
 
 Initial GCC 14.2 CPU measurements: float mantissa 24 bits, reference mantissa 64 bits; maximum absolute probability error `1.0926696584369847e-7`, maximum row-mass error `7.31821885510285011e-6`. No GPU or performance inference follows. Checks use absolute tolerance `1e-4 + 1e-3*abs(reference)` and row-mass tolerance `1e-5`, plus finite/nonnegative outputs and exact masked zeros. Long-double precision varies by platform.
+
+### November 20 numerical regression
+
+The initial 252 cases missed a failure: a full 4,096-column row with logits `[0, -0.001f, ...]` had mass error `1.9365674233995378e-5`, violating the existing `1e-5` tolerance. Repeated float additions lost small contributions. Widening the sum alone fixed that row but another ascending near-tie regression still failed because its rescaling exponentials were evaluated in float.
+
+The fix preserves the online recurrence and float inputs/logits/output, while evaluating normalization exponentials and accumulating the denominator in double. **No tolerance was relaxed.** The CUDA kernel still uses its original float parallel reductions and is unchanged/unvalidated; this CPU fix establishes nothing about its accuracy or speed.
+
+`test_edges.cpp` adds closed-form near-tie checks, ascending/descending order cases, the largest supported 1024×4096 shape with non-dyadic near-ties and varied masks, non-dyadic shift/permutation checks, and independent checker fault injection. Faults include wrong length, NaN/Inf/negative output, mass-preserving wrong probabilities, per-pixel-small but excessive total mass, tiny masked leakage and a dropped valid prefix. These are correctness tests, not benchmark measurements.
+
+```bash
+g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror test_edges.cpp -o /tmp/test_edges
+/tmp/test_edges
+```
+
+The initial measurements above are historical, before the fix. Run `study` for current metrics and precision metadata; the regression executable separately prints measured CPU mass/error diagnostics. No claim is made over all real-valued inputs in the bounded domain.
+
+Observed after the fix on GCC 14.2: the original 252-matrix study has maximum probability error `2.81434690992381914e-8` and mass error `3.37604433298110962e-8`. The formerly failing `0.001f`-gap row has mass error `5.84986992180347443e-9`. The new maximum-shape case has maximum probability error `3.05393397052938869e-11` and mass error `7.45058059692382812e-9`. These are CPU diagnostics, not GPU or speedup measurements.
 
 ## Experimental CUDA build and execution
 

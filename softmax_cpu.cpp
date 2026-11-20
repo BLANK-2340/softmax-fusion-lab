@@ -27,12 +27,16 @@ Bounds keep FP32 transformation finite. NaN/Inf inputs are rejected even in
 masked cells. No strides, arbitrary masks, aliasing, backward pass or FP16.
 
 Reference: materialize long-double logits, max shift, exponentials and sum.
-Candidate: float arithmetic, online max/normalizer recurrence, then recompute
+Candidate: float logits/output with double normalizer/exponential arithmetic,
+online max/normalizer recurrence, then recompute
 transformed logits and write probabilities in a second pass. This is a serial
 CPU algorithm; it is neither a CUDA simulator nor proof of parallel reduction.
 Tests compare complete output vectors with abs<=1e-4 + rel1e-3*|reference|,
 row mass within 1e-5, finite/nonnegative outputs and exact masked zeros.
-Mixed-precision comparison includes FP32 transform and accumulation error.
+Mixed-precision comparison includes FP32 transform error and FP64 normalization.
+November20: fixed a 4096-column near-tie row-mass failure
+(1.9365674233995378e-5 with float sum) by widening normalization arithmetic;
+the recurrence, input/output types, tolerances and GPU kernel are unchanged.
 Long double precision is platform-dependent; study prints mantissa bits.
 No fast-math flags. No timing or speedup measurements are reported.
 
@@ -144,16 +148,17 @@ std::vector<float> online(const Batch& b) {
     for (std::size_t r=0; r<b.rows; ++r) {
         const auto n=b.lengths[r];
         if (n==0) continue;
-        float maximum=0, sum=0;
+        float maximum=0;
+        double sum=0; // retain near-tie contributions across up to 4096 columns
         for (std::size_t c=0; c<n; ++c) {
             const float z=(b.x[r*b.cols+c]+b.bias[c])*b.scale;
             if (c==0) { maximum=z; sum=1; }
-            else if (z<=maximum) sum+=std::exp(z-maximum);
-            else { sum=sum*std::exp(maximum-z)+1; maximum=z; }
+            else if (z<=maximum) sum+=std::exp(static_cast<double>(z)-maximum);
+            else { sum=sum*std::exp(static_cast<double>(maximum)-z)+1; maximum=z; }
         }
         for (std::size_t c=0; c<n; ++c) {
             const float z=(b.x[r*b.cols+c]+b.bias[c])*b.scale;
-            out[r*b.cols+c]=std::exp(z-maximum)/sum;
+            out[r*b.cols+c]=static_cast<float>(std::exp(static_cast<double>(z)-maximum)/sum);
         }
     }
     return out;
@@ -272,6 +277,7 @@ int main(int argc, char** argv) {
             std::cout << std::setprecision(18)
                       << "{\"scope\":\"CPU arithmetic only; no GPU or performance claim\",\"matrices\":252,\"rows\":1260,"
                       << "\"float_mantissa_bits\":" << std::numeric_limits<float>::digits
+                      << ",\"normalizer_mantissa_bits\":" << std::numeric_limits<double>::digits
                       << ",\"reference_mantissa_bits\":" << std::numeric_limits<long double>::digits
                       << ",\"max_absolute_error\":" << e.max_abs
                       << ",\"max_row_mass_error\":" << e.max_mass << ",\"gpu_validation\":\"PENDING\"}\n";

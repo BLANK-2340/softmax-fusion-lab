@@ -17,3 +17,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -W error -m unittest -v test_report
+      - run: g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror test_edges.cpp -o test_edges
+      - run: ./test_edges
+      - run: g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer test_edges.cpp -o test_edges_san
+      - run: ASAN_OPTIONS=detect_leaks=0 ./test_edges_san
